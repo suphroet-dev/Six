@@ -1,0 +1,175 @@
+-- ==========================================
+-- SCRIPT NAME: six
+-- TYPE: LocalScript
+-- ==========================================
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+local SixScript = {
+    SpeedValue = 16,
+    IsFlying = false,
+    InfiniteJumpEnabled = false,
+    NoclipEnabled = false,
+    AntiBanEnabled = false
+}
+
+-- Update Character Reference upon Respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+end)
+
+-------------------------------------------------
+-- 1. ฟังก์ชั่น: บินได้ (Fly)
+-------------------------------------------------
+function SixScript.ToggleFly(state)
+    SixScript.IsFlying = state
+    local RootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not RootPart then return end
+
+    if SixScript.IsFlying then
+        local BodyVelocity = Instance.new("BodyVelocity")
+        BodyVelocity.Name = "SixFlyVelocity"
+        BodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        BodyVelocity.Parent = RootPart
+        
+        task.spawn(function()
+            while SixScript.IsFlying and RootPart:FindFirstChild("SixFlyVelocity") do
+                local Camera = workspace.CurrentCamera
+                local moveDir = Vector3.new()
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+                
+                RootPart.SixFlyVelocity.Velocity = moveDir * 50
+                task.wait()
+            end
+        end)
+    else
+        if RootPart:FindFirstChild("SixFlyVelocity") then
+            RootPart.SixFlyVelocity:Destroy()
+        end
+    end
+end
+
+-------------------------------------------------
+-- 2. ฟังก์ชั่น: เตะคนออก (Kick Player)
+-- *หมายเหตุ: เตะได้เฉพาะตัวเองหรือต้องใช้บน Server Script เท่านั้น
+-------------------------------------------------
+function SixScript.KickPlayer(targetPlayerName, reason)
+    if targetPlayerName == LocalPlayer.Name then
+        LocalPlayer:Kick(reason or "คุณถูกเตะออกจากเกมโดยระบบ six")
+    else
+        warn("[six Script]: ไม่สามารถเตะผู้เล่นคนอื่นจาก Client-side ได้ หากไม่มี RemoteEvent ของเซิร์ฟเวอร์")
+    end
+end
+
+-------------------------------------------------
+-- 3. ฟังก์ชั่น: กันแบน (Bypass/Anti-Kick Basic)
+-------------------------------------------------
+function SixScript.EnableAntiBan()
+    SixScript.AntiBanEnabled = true
+    local rawMeta = getrawmetatable or debug.getmetatable
+    if rawMeta then
+        setreadonly(rawMeta(game), false)
+        local oldNamecall = rawMeta(game).__namecall
+        rawMeta(game).__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if method == "Kick" and SixScript.AntiBanEnabled then
+                warn("[six Script]: บล็อกการสั่ง Kick จาก LocalScript")
+                return nil
+            end
+            return oldNamecall(self, ...)
+        end)
+    else
+        print("[six Script]: Anti-Ban ระดับพื้นฐานเปิดใช้งานแล้ว")
+    end
+end
+
+-------------------------------------------------
+-- 4. ฟังก์ชั่น: วิ่งเร็ว (Speed: 1-1000)
+-------------------------------------------------
+function SixScript.SetSpeed(value)
+    local clampedSpeed = math.clamp(value, 1, 1000)
+    SixScript.SpeedValue = clampedSpeed
+    if Humanoid then
+        Humanoid.WalkSpeed = clampedSpeed
+    end
+end
+
+-------------------------------------------------
+-- 5. ฟังก์ชั่น: กระโดดไม่จำกัด (Infinite Jump)
+-------------------------------------------------
+function SixScript.ToggleInfiniteJump(state)
+    SixScript.InfiniteJumpEnabled = state
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if SixScript.InfiniteJumpEnabled and Humanoid then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-------------------------------------------------
+-- 6. ฟังก์ชั่น: เดินทะลุ (Noclip)
+-------------------------------------------------
+function SixScript.ToggleNoclip(state)
+    SixScript.NoclipEnabled = state
+end
+
+RunService.Stepped:Connect(function()
+    if SixScript.NoclipEnabled and Character then
+        for _, part in pairs(Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-------------------------------------------------
+-- 7. ฟังก์ชั่น: เสกของในแมพ (Spawn Item)
+-- *หมายเหตุ: แสดงผลเฉพาะหน้าจอผู้เล่นเครื่องนี้เท่านั้น
+-------------------------------------------------
+function SixScript.SpawnItem(assetId, spawnCFrame)
+    local targetPosition = spawnCFrame or (Character and Character:GetPrimaryPartCFrame())
+    if not targetPosition then return end
+
+    local newItem = Instance.new("Part")
+    newItem.Name = "six_SpawnedItem_" .. tostring(assetId or "Part")
+    newItem.Size = Vector3.new(2, 2, 2)
+    newItem.BrickColor = BrickColor.new("Bright blue")
+    newItem.CFrame = targetPosition + Vector3.new(0, 3, 0)
+    newItem.Parent = workspace
+    
+    print("[six Script]: เสกวัตถุเรียบร้อยแล้วที่ตำแหน่งของคุณ")
+    return newItem
+end
+
+-------------------------------------------------
+-- 8. ฟังก์ชั่น: ตรวจสอบสถานะการทำงานสคริปต์
+-------------------------------------------------
+function SixScript.GetStatus()
+    print("=== [six Script Status] ===")
+    print("Speed:", SixScript.SpeedValue)
+    print("Fly:", SixScript.IsFlying)
+    print("Inf Jump:", SixScript.InfiniteJumpEnabled)
+    print("Noclip:", SixScript.NoclipEnabled)
+    print("AntiBan:", SixScript.AntiBanEnabled)
+    print("==========================")
+end
+
+-- ตัวอย่างการเรียกใช้งานฟังก์ชั่น
+SixScript.SetSpeed(100)           -- ปรับความเร็วเป็น 100
+SixScript.ToggleInfiniteJump(true)-- เปิดกระโดดไม่จำกัด
+SixScript.EnableAntiBan()         -- เปิดระบบกันแบนพื้นฐาน
+
+return SixScript
